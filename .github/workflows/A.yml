@@ -1,0 +1,157 @@
+name: Build Noctalia Shell
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '0 0 * * *'
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: "pages"
+  cancel-in-progress: false
+
+jobs:
+  build-pkg:
+    runs-on: ubuntu-latest
+    container:
+      image: archlinux:latest
+      options: --privileged
+
+    steps:
+      - name: Update System & Install Build Dependencies
+        run: |
+          pacman -Syu --noconfirm
+          pacman -S --noconfirm base-devel git sudo curl
+
+      - name: Set up Non-Root Build User
+        run: |
+          useradd -m builder
+          echo "builder ALL=(ALL) NOPASSWD: ALL" >> /etc/sudoers
+
+      - name: Check for updates and compile if needed
+        run: |
+          cat << 'EOF' > /home/builder/build.sh
+          #!/bin/bash
+          set -e
+          
+          mkdir -p /tmp/artifact
+          
+          # Check latest upstream commit
+          LATEST_COMMIT=$(git ls-remote https://github.com/noctalia-dev/noctalia HEAD | awk '{print $1}')
+          
+          # Get deployed commit from our GitHub Pages
+          REPO_URL="https://${GITHUB_REPOSITORY_OWNER}.github.io/${GITHUB_REPOSITORY#*/}"
+          DEPLOYED_COMMIT=$(curl -s $REPO_URL/index.html | grep -oP 'Commit: \K[0-9a-f]+' || echo "none")
+          
+          if [[ "$LATEST_COMMIT" == "$DEPLOYED_COMMIT"* ]] && [[ "$DEPLOYED_COMMIT" != "none" ]]; then
+              echo "No changes detected. Re-using existing package from GitHub Pages."
+              cd /tmp/artifact
+              curl -sO $REPO_URL/noctalia.db
+              curl -sO $REPO_URL/noctalia.db.tar.gz
+              curl -sO $REPO_URL/noctalia.files
+              curl -sO $REPO_URL/noctalia.files.tar.gz
+              tar -xf noctalia.db
+              PKG_NAME=$(cat noctalia-git-*/desc | grep -A 1 '%FILENAME%' | tail -n 1)
+              curl -sO $REPO_URL/$PKG_NAME
+              curl -sO $REPO_URL/index.html
+              rm -rf noctalia-git-*
+              
+              # Set an environment variable so next steps know we skipped
+              echo "SKIPPED_BUILD=true" >> /tmp/artifact/build_status
+              exit 0
+          fi
+          
+          echo "Changes detected (or no previous build). Compiling from scratch..."
+          mkdir -p /home/builder/build
+          cd /home/builder/build
+          
+          git clone https://aur.archlinux.org/noctalia-git.git
+          cd noctalia-git
+          makepkg -s --noconfirm
+          
+          # Copy to artifact dir
+          cp *.pkg.tar.zst /tmp/artifact/
+          EOF
+          
+          chmod +x /home/builder/build.sh
+          chown -R builder:builder /home/builder
+          chown -R builder:builder /tmp/artifact
+          
+          sudo -u builder /home/builder/build.sh
+
+      - name: Export Built Package and Create Pacman Repo
+        run: |
+          cd /tmp/artifact
+          if [ -f "build_status" ]; then
+              echo "Build was skipped, using existing artifacts."
+              rm build_status
+          else
+              # Generate pacman repository database
+              repo-add noctalia.db.tar.gz *.pkg.tar.zst
+              rm -f noctalia.db noctalia.files
+              cp noctalia.db.tar.gz noctalia.db
+              cp noctalia.files.tar.gz noctalia.files
+              
+              # Generate website
+              PKG_FILE=$(ls *.pkg.tar.zst | head -n 1)
+              VERSION=$(pacman -Qip "$PKG_FILE" | grep Version | awk '{print $3}')
+              COMMIT=$(echo "$VERSION" | grep -oP 'g\K[0-9a-f]+(?=-)')
+              REPO_URL="https://${GITHUB_REPOSITORY_OWNER}.github.io/${GITHUB_REPOSITORY#*/}"
+              
+              cat <<EOF > index.html
+          <!DOCTYPE html>
+          <html>
+          <head>
+          <title>Noctalia Repository</title>
+          </head>
+          <body>
+          <h1>Noctalia Repository</h1>
+          <p>Version: ${VERSION}</p>
+          <p>Commit: ${COMMIT}</p>
+          <p>Add to /etc/pacman.conf:</p>
+          <pre>
+          [noctalia]
+          SigLevel = Optional TrustAll
+          Server = ${REPO_URL}
+          </pre>
+          <p>Then run: sudo pacman -Sy noctalia-git</p>
+          </body>
+          </html>
+          EOF
+          fi
+
+      - name: Upload Package Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: noctalia-arch-package
+          path: /tmp/artifact/*
+          retention-days: 1
+
+  deploy:
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    runs-on: ubuntu-latest
+    needs: build-pkg
+    steps:
+      - name: Download artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: noctalia-arch-package
+          path: './pages-artifact'
+
+      - name: Setup Pages
+        uses: actions/configure-pages@v5
+
+      - name: Upload pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: './pages-artifact'
+
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
