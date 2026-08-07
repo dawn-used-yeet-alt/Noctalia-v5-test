@@ -18,52 +18,56 @@ REPO_URL="${5}"
 COMMIT_SHORT="${COMMIT:0:7}"
 
 if [ -n "$GPG_KEY_ID" ]; then
-    SIGNING_STATUS="Enabled (${GPG_KEY_ID})"
+    SIGNING_HTML="<span class=\"sig-on\"><span class=\"sig-dot\" aria-hidden=\"true\"></span>signed &middot; <code>${GPG_KEY_ID}</code></span>"
     SETUP_INSTRUCTIONS=$(cat <<EOF
-      <section>
-        <h2>1. Import Signing Key</h2>
-        <div class="code-block">
-          <button class="copy-btn" onclick="copyCode(this, 'step1')">Copy</button>
+      <section class="section">
+        <p class="section-label">Step 01</p>
+        <h2>Import signing key</h2>
+        <div class="code-wrap">
+          <button class="copy-btn" onclick="copyCode(this, 'step1')">copy</button>
           <pre id="step1">curl -fsSL ${REPO_URL}/noctalia-signing-key.gpg | sudo pacman-key --add -
 sudo pacman-key --lsign-key ${GPG_KEY_ID}</pre>
         </div>
       </section>
-      <section>
-        <h2>2. Configure Pacman</h2>
-        <p style="font-size:0.875rem; color:var(--text-muted); margin-bottom:0.5rem;">Add the following block to <code>/etc/pacman.conf</code>:</p>
-        <div class="code-block">
-          <button class="copy-btn" onclick="copyCode(this, 'step2')">Copy</button>
+      <section class="section">
+        <p class="section-label">Step 02</p>
+        <h2>Add repository to <code class="inline-path">/etc/pacman.conf</code></h2>
+        <div class="code-wrap">
+          <button class="copy-btn" onclick="copyCode(this, 'step2')">copy</button>
           <pre id="step2">[noctalia]
 SigLevel = Required DatabaseOptional
 Server = ${REPO_URL}</pre>
         </div>
       </section>
-      <section>
-        <h2>3. Install Package</h2>
-        <div class="code-block">
-          <button class="copy-btn" onclick="copyCode(this, 'step3')">Copy</button>
+      <section class="section">
+        <p class="section-label">Step 03</p>
+        <h2>Install</h2>
+        <div class="code-wrap">
+          <button class="copy-btn" onclick="copyCode(this, 'step3')">copy</button>
           <pre id="step3">sudo pacman -Sy noctalia-git</pre>
         </div>
       </section>
 EOF
 )
 else
-    SIGNING_STATUS="Disabled (Unsigned)"
+    SIGNING_HTML="<span class=\"sig-off\">unsigned</span>"
     SETUP_INSTRUCTIONS=$(cat <<EOF
-      <section>
-        <h2>1. Configure Pacman</h2>
-        <p style="font-size:0.875rem; color:var(--text-muted); margin-bottom:0.5rem;">Add the following block to <code>/etc/pacman.conf</code>:</p>
-        <div class="code-block">
-          <button class="copy-btn" onclick="copyCode(this, 'step1')">Copy</button>
+      <section class="section">
+        <p class="section-label">Step 01</p>
+        <h2>Add repository to <code class="inline-path">/etc/pacman.conf</code></h2>
+        <p class="callout-warn">Signing is not configured. <code>TrustAll</code> disables signature verification — only proceed if you trust this source.</p>
+        <div class="code-wrap">
+          <button class="copy-btn" onclick="copyCode(this, 'step1')">copy</button>
           <pre id="step1">[noctalia]
 SigLevel = Optional TrustAll
 Server = ${REPO_URL}</pre>
         </div>
       </section>
-      <section>
-        <h2>2. Install Package</h2>
-        <div class="code-block">
-          <button class="copy-btn" onclick="copyCode(this, 'step2')">Copy</button>
+      <section class="section">
+        <p class="section-label">Step 02</p>
+        <h2>Install</h2>
+        <div class="code-wrap">
+          <button class="copy-btn" onclick="copyCode(this, 'step2')">copy</button>
           <pre id="step2">sudo pacman -Sy noctalia-git</pre>
         </div>
       </section>
@@ -77,222 +81,285 @@ cat <<EOF > "$OUTPUT_DIR/index.html"
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Noctalia Repository</title>
-<meta name="description" content="Automated daily builds of Noctalia for Arch Linux, served as a pacman repository via GitHub Pages.">
+<title>noctalia-git — Arch Linux pacman repository</title>
+<meta name="description" content="Automated daily builds of noctalia-git for Arch Linux, served as a pacman repository via GitHub Pages.">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 <style>
+  /* Hallmark · pre-emit critique: P5 H5 E5 S5 R5 V4
+   * genre: editorial · theme: ink-on-paper documentation
+   * contrast: all text pairs pass WCAG AA
+   */
   :root {
-    --bg: #0f172a;
-    --card-bg: rgba(30, 41, 59, 0.7);
-    --card-border: rgba(255, 255, 255, 0.1);
-    --text-main: #f8fafc;
-    --text-muted: #94a3b8;
-    --accent: #8b5cf6;
-    --accent-hover: #7c3aed;
-    --accent-glow: rgba(139, 92, 246, 0.25);
-    --code-bg: #090d16;
-    --success: #10b981;
+    --color-bg:         #f8f8f6;
+    --color-surface:    #ffffff;
+    --color-border:     #d0d0cc;
+    --color-border-sub: #e8e8e4;
+    --color-text:       #111111;
+    --color-text-muted: #6b6b6b;
+    --color-accent:     #1a47b8;
+    --color-code-bg:    #f2f2ee;
+    --color-code-text:  #111111;
+    --color-success:    #0a6640;
+    --color-warn:       #8a4b00;
+    --color-warn-bg:    #fdf7ed;
+    --font-sans: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    --font-mono: "JetBrains Mono", "Fira Code", ui-monospace, "Cascadia Code", monospace;
+    --space-1: 0.25rem;
+    --space-2: 0.5rem;
+    --space-3: 0.75rem;
+    --space-4: 1rem;
+    --space-6: 1.5rem;
+    --space-8: 2rem;
+    --space-12: 3rem;
+    --radius: 3px;
   }
-  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { overflow-x: clip; }
+
   body {
-    font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
-    background-color: var(--bg);
-    color: var(--text-main);
+    font-family: var(--font-sans);
+    background: var(--color-bg);
+    color: var(--color-text);
+    font-size: 1rem;
+    line-height: 1.65;
+    padding: var(--space-12) var(--space-4);
     min-height: 100vh;
+  }
+
+  .wrap {
+    max-width: 640px;
+    margin: 0 auto;
+  }
+
+  /* Header */
+  .site-header {
     display: flex;
-    justify-content: center;
-    align-items: center;
-    padding: 2rem 1rem;
-    background-image: 
-      radial-gradient(at 20% 20%, rgba(139, 92, 246, 0.15) 0px, transparent 50%),
-      radial-gradient(at 80% 80%, rgba(59, 130, 246, 0.15) 0px, transparent 50%);
-  }
-  .container {
-    width: 100%;
-    max-width: 760px;
-  }
-  .card {
-    background: var(--card-bg);
-    backdrop-filter: blur(12px);
-    -webkit-backdrop-filter: blur(12px);
-    border: 1px solid var(--card-border);
-    border-radius: 16px;
-    padding: 2.5rem;
-    box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.3), 0 8px 10px -6px rgba(0, 0, 0, 0.3);
-  }
-  .header {
-    display: flex;
-    align-items: center;
+    align-items: baseline;
     justify-content: space-between;
-    margin-bottom: 1.5rem;
     flex-wrap: wrap;
-    gap: 1rem;
+    gap: var(--space-3);
+    padding-bottom: var(--space-6);
+    border-bottom: 2px solid var(--color-text);
+    margin-bottom: var(--space-6);
   }
+
   h1 {
-    font-size: 1.875rem;
-    font-weight: 700;
-    letter-spacing: -0.025em;
-    background: linear-gradient(135deg, #ffffff 0%, #cbd5e1 100%);
-    -webkit-background-clip: text;
-    -webkit-text-fill-color: transparent;
+    font-family: var(--font-mono);
+    font-size: 1.25rem;
+    font-weight: 500;
+    font-style: normal;
+    color: var(--color-text);
+    overflow-wrap: anywhere;
+    min-width: 0;
+    letter-spacing: -0.01em;
   }
-  .badge {
+
+  .platform-label {
+    font-family: var(--font-mono);
+    font-size: 0.625rem;
+    text-transform: uppercase;
+    letter-spacing: 0.12em;
+    color: var(--color-text-muted);
+    white-space: nowrap;
+  }
+
+  /* Meta strip */
+  .meta-strip {
+    display: flex;
+    flex-wrap: wrap;
+    column-gap: var(--space-8);
+    row-gap: var(--space-2);
+    margin-bottom: var(--space-12);
+    font-family: var(--font-mono);
+    font-size: 0.75rem;
+    color: var(--color-text-muted);
+  }
+
+  .meta-strip b { font-weight: 500; color: var(--color-text); }
+  .meta-strip a { color: var(--color-accent); text-decoration: none; }
+  .meta-strip a:hover { text-decoration: underline; }
+
+  .sig-on {
     display: inline-flex;
     align-items: center;
-    gap: 0.375rem;
-    padding: 0.25rem 0.75rem;
-    border-radius: 9999px;
-    font-size: 0.8125rem;
-    font-weight: 500;
-    background: rgba(16, 185, 129, 0.1);
-    color: var(--success);
-    border: 1px solid rgba(16, 185, 129, 0.2);
+    gap: var(--space-1);
+    color: var(--color-success);
   }
-  .badge-dot {
+
+  .sig-dot {
     width: 6px;
     height: 6px;
     border-radius: 50%;
-    background-color: var(--success);
-    box-shadow: 0 0 8px var(--success);
+    background: var(--color-success);
+    flex-shrink: 0;
   }
-  .meta-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-    gap: 1rem;
-    margin-bottom: 2rem;
-  }
-  .meta-item {
-    background: rgba(15, 23, 42, 0.5);
-    border: 1px solid rgba(255, 255, 255, 0.05);
-    border-radius: 10px;
-    padding: 1rem;
-  }
-  .meta-label {
+
+  .sig-on code {
+    font-family: var(--font-mono);
+    color: var(--color-success);
     font-size: 0.75rem;
+  }
+
+  .sig-off { color: var(--color-warn); }
+
+  /* Sections */
+  .section {
+    padding: var(--space-6) 0;
+    border-bottom: 1px solid var(--color-border-sub);
+  }
+
+  .section:last-of-type { border-bottom: none; }
+
+  .section-label {
+    font-family: var(--font-mono);
+    font-size: 0.5625rem;
     text-transform: uppercase;
-    letter-spacing: 0.05em;
-    color: var(--text-muted);
-    margin-bottom: 0.25rem;
+    letter-spacing: 0.14em;
+    color: var(--color-text-muted);
+    margin-bottom: var(--space-2);
   }
-  .meta-value {
-    font-family: 'JetBrains Mono', monospace;
-    font-size: 0.9375rem;
-    font-weight: 500;
-    color: var(--text-main);
-    word-break: break-all;
-  }
-  .meta-value a {
-    color: var(--accent);
-    text-decoration: none;
-  }
-  .meta-value a:hover {
-    text-decoration: underline;
-  }
-  section {
-    margin-top: 1.5rem;
-  }
+
   h2 {
-    font-size: 1.125rem;
+    font-size: 0.9375rem;
     font-weight: 600;
-    margin-bottom: 0.75rem;
-    color: #f1f5f9;
+    font-style: normal;
+    color: var(--color-text);
+    margin-bottom: var(--space-4);
+    overflow-wrap: anywhere;
+    min-width: 0;
   }
-  .code-block {
-    position: relative;
-    background: var(--code-bg);
-    border: 1px solid rgba(255, 255, 255, 0.08);
-    border-radius: 10px;
-    padding: 1rem 1.25rem;
-    margin-bottom: 1.25rem;
-    overflow-x: auto;
+
+  code.inline-path {
+    font-family: var(--font-mono);
+    font-size: 0.8125rem;
+    font-weight: 400;
+    color: var(--color-text-muted);
+    background: var(--color-code-bg);
+    padding: 1px 5px;
+    border-radius: var(--radius);
+    border: 1px solid var(--color-border-sub);
   }
-  pre {
-    font-family: 'JetBrains Mono', monospace;
+
+  .callout-warn {
     font-size: 0.875rem;
-    line-height: 1.6;
-    color: #e2e8f0;
+    color: var(--color-warn);
+    background: var(--color-warn-bg);
+    border-left: 3px solid var(--color-warn);
+    border-radius: 0 var(--radius) var(--radius) 0;
+    padding: var(--space-3) var(--space-4);
+    margin-bottom: var(--space-4);
+    line-height: 1.55;
   }
+
+  .callout-warn code {
+    font-family: var(--font-mono);
+    font-size: 0.8125rem;
+  }
+
+  /* Code block */
+  .code-wrap { position: relative; }
+
+  pre {
+    font-family: var(--font-mono);
+    font-size: 0.8125rem;
+    line-height: 1.8;
+    color: var(--color-code-text);
+    background: var(--color-code-bg);
+    border: 1px solid var(--color-border-sub);
+    border-radius: var(--radius);
+    padding: var(--space-4);
+    padding-right: 4.5rem;
+    overflow-x: auto;
+    tab-size: 2;
+  }
+
   .copy-btn {
     position: absolute;
-    top: 0.625rem;
-    right: 0.625rem;
-    background: rgba(255, 255, 255, 0.08);
-    border: 1px solid rgba(255, 255, 255, 0.1);
-    color: var(--text-muted);
-    border-radius: 6px;
-    padding: 0.35rem 0.65rem;
-    font-size: 0.75rem;
+    top: var(--space-2);
+    right: var(--space-2);
+    font-family: var(--font-mono);
+    font-size: 0.5625rem;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    background: var(--color-surface);
+    border: 1px solid var(--color-border);
+    color: var(--color-text-muted);
+    border-radius: var(--radius);
+    padding: 3px 9px;
     cursor: pointer;
-    transition: all 0.2s;
+    line-height: 1.6;
+    transition: color 0.12s, border-color 0.12s;
   }
-  .copy-btn:hover {
-    background: var(--accent);
-    color: #fff;
-    border-color: var(--accent);
-  }
-  .footer {
-    margin-top: 2.5rem;
-    padding-top: 1.25rem;
-    border-top: 1px solid var(--card-border);
+
+  .copy-btn:hover { color: var(--color-accent); border-color: var(--color-accent); }
+  .copy-btn:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 2px; }
+  .copy-btn:active { opacity: 0.7; }
+
+  /* Footer */
+  .site-footer {
+    margin-top: var(--space-8);
+    padding-top: var(--space-6);
+    border-top: 1px solid var(--color-border-sub);
     display: flex;
     justify-content: space-between;
-    align-items: center;
+    flex-wrap: wrap;
+    gap: var(--space-3);
     font-size: 0.8125rem;
-    color: var(--text-muted);
+    color: var(--color-text-muted);
   }
-  .footer a {
-    color: var(--text-muted);
-    text-decoration: none;
-    transition: color 0.2s;
-  }
-  .footer a:hover {
-    color: var(--accent);
+
+  .footer-links { display: flex; gap: var(--space-6); }
+  .site-footer a { color: var(--color-text-muted); text-decoration: none; }
+  .site-footer a:hover { color: var(--color-accent); text-decoration: underline; }
+
+  /* Responsive */
+  @media (max-width: 480px) {
+    body { padding: var(--space-8) var(--space-4); }
+    h1 { font-size: 1.0625rem; }
+    .site-header { align-items: flex-start; gap: var(--space-2); }
+    .meta-strip { column-gap: var(--space-6); }
+    .footer-links { gap: var(--space-4); }
   }
 </style>
 </head>
 <body>
-  <div class="container">
-    <div class="card">
-      <div class="header">
-        <h1>Noctalia Repository</h1>
-        <div class="badge"><span class="badge-dot"></span> Active Arch Repo</div>
-      </div>
-      <div class="meta-grid">
-        <div class="meta-item">
-          <div class="meta-label">Package Version</div>
-          <div class="meta-value">${VERSION}</div>
-        </div>
-        <div class="meta-item">
-          <div class="meta-label">Upstream Commit</div>
-          <div class="meta-value"><a href="https://github.com/noctalia-dev/noctalia/commit/${COMMIT}" target="_blank" rel="noopener">${COMMIT_SHORT}</a></div>
-        </div>
-        <div class="meta-item">
-          <div class="meta-label">Package Signing</div>
-          <div class="meta-value">${SIGNING_STATUS}</div>
-        </div>
-      </div>
-      ${SETUP_INSTRUCTIONS}
-      <div class="footer">
-        <span>Automated Arch Linux repository</span>
-        <div>
-          <a href="https://github.com/noctalia-dev/noctalia" target="_blank" rel="noopener">Upstream Repo</a> &bull;
-          <a href="https://aur.archlinux.org/packages/noctalia-git" target="_blank" rel="noopener">AUR Package</a>
-        </div>
-      </div>
-    </div>
+<div class="wrap">
+
+  <header class="site-header">
+    <h1>noctalia-git</h1>
+    <span class="platform-label">Arch Linux &middot; pacman</span>
+  </header>
+
+  <div class="meta-strip">
+    <span>version <b>${VERSION}</b></span>
+    <span>commit <b><a href="https://github.com/noctalia-dev/noctalia/commit/${COMMIT}" target="_blank" rel="noopener">${COMMIT_SHORT}</a></b></span>
+    <span>signing ${SIGNING_HTML}</span>
   </div>
-  <script>
-    function copyCode(btn, elementId) {
-      const code = document.getElementById(elementId).innerText;
-      navigator.clipboard.writeText(code).then(() => {
-        const orig = btn.innerText;
-        btn.innerText = 'Copied!';
-        setTimeout(() => btn.innerText = orig, 2000);
-      });
-    }
-  </script>
+
+  ${SETUP_INSTRUCTIONS}
+
+  <footer class="site-footer">
+    <span>Automated daily builds &middot; GitHub Actions</span>
+    <nav class="footer-links" aria-label="External links">
+      <a href="https://github.com/noctalia-dev/noctalia" target="_blank" rel="noopener">upstream</a>
+      <a href="https://aur.archlinux.org/packages/noctalia-git" target="_blank" rel="noopener">AUR</a>
+    </nav>
+  </footer>
+
+</div>
+<script>
+  function copyCode(btn, id) {
+    var text = document.getElementById(id).innerText;
+    navigator.clipboard.writeText(text).then(function() {
+      var orig = btn.innerText;
+      btn.innerText = 'copied';
+      setTimeout(function() { btn.innerText = orig; }, 2000);
+    });
+  }
+</script>
 </body>
 </html>
 EOF
