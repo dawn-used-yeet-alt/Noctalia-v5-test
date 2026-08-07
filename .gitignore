@@ -5,6 +5,13 @@
 *.db.tar.gz
 *.files
 *.files.tar.gz
+*.sig
+SHA256SUMS
+COMMIT
+index.html
+build_status
+LATEST_COMMIT
+noctalia-signing-key.gpg
 
 # Editor / OS junk
 .vscode/

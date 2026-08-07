@@ -1,6 +1,6 @@
 # Noctalia Arch Repository
 
-[![Build Noctalia Shell](https://github.com/dawn-used-yeet-alt/Noctalia-v5-test/actions/workflows/build-and-deploy.yml/badge.svg)](https://github.com/dawn-used-yeet-alt/Noctalia-v5-test/actions/workflows/build-and-deploy.yml)
+[![Build & Deploy Noctalia](https://github.com/dawn-used-yeet-alt/Noctalia-v5-test/actions/workflows/build-and-deploy.yml/badge.svg)](https://github.com/dawn-used-yeet-alt/Noctalia-v5-test/actions/workflows/build-and-deploy.yml)
 
 Automated daily builds of [Noctalia](https://github.com/noctalia-dev/noctalia) for Arch Linux, served as a pacman repository via GitHub Pages.
 
@@ -8,11 +8,11 @@ Automated daily builds of [Noctalia](https://github.com/noctalia-dev/noctalia) f
 
 ### With package signing (recommended)
 
-If the repository has GPG signing enabled, first import the signing key:
+If the repository has GPG signing enabled, first import the signing key (the key ID is displayed on the [repository landing page](https://dawn-used-yeet-alt.github.io/Noctalia-v5-test)):
 
 ```bash
 curl -fsSL https://dawn-used-yeet-alt.github.io/Noctalia-v5-test/noctalia-signing-key.gpg | sudo pacman-key --add -
-sudo pacman-key --lsign-key FACDAEC5C6FDA57B
+sudo pacman-key --lsign-key <KEY_ID>  # KEY_ID is shown on the repository landing page
 ```
 
 Then add to `/etc/pacman.conf`:

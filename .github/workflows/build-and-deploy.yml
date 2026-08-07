@@ -1,9 +1,9 @@
-name: Build Noctalia Shell
+name: Build & Deploy Noctalia
 
 on:
   workflow_dispatch:
   schedule:
-    - cron: '0 0 * * *'
+    - cron: '0 3 * * *'
 
 permissions:
   contents: read
@@ -18,7 +18,7 @@ jobs:
   build-pkg:
     runs-on: ubuntu-latest
     container:
-      image: archlinux:latest
+      image: archlinux@sha256:a674898d53cc63b1af4023a468ccddc25ed9d7aecc3996f16171838a57085999  # archlinux:latest 2026-08-07
 
     steps:
       - name: Update System & Install Build Dependencies
@@ -29,7 +29,13 @@ jobs:
       - name: Set up Non-Root Build User
         run: |
           useradd -m builder
-          echo "builder ALL=(ALL) NOPASSWD: ALL" >> /etc/sudoers
+          # Restrict builder to only the pacman binary — it does not need full root.
+          # Write to a drop-in file so syntax errors don't silently break the base sudoers.
+          cat > /etc/sudoers.d/builder <<'SUDOERS'
+          builder ALL=(ALL) NOPASSWD: /usr/bin/pacman
+          Defaults:builder env_keep += "GITHUB_REPOSITORY GITHUB_REPOSITORY_OWNER"
+          SUDOERS
+          chmod 440 /etc/sudoers.d/builder
 
       - name: Checkout repository
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4
@@ -42,15 +48,29 @@ jobs:
           restore-keys: |
             pacman-${{ runner.os }}-
 
-      - name: Import GPG signing key
-        if: ${{ env.GPG_PRIVATE_KEY != '' }}
+      - name: Check GPG key availability
+        id: gpg-check
         env:
           GPG_PRIVATE_KEY: ${{ secrets.GPG_PRIVATE_KEY }}
         run: |
-          echo "$GPG_PRIVATE_KEY" | gpg --batch --import
+          if [ -n "$GPG_PRIVATE_KEY" ]; then
+            echo "available=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Import GPG signing key
+        if: steps.gpg-check.outputs.available == 'true'
+        env:
+          GPG_PRIVATE_KEY: ${{ secrets.GPG_PRIVATE_KEY }}
+        run: |
+          # Write key to a secure temp file to avoid special-character issues with echo pipes
+          _gpg_tmp=$(mktemp)
+          chmod 600 "$_gpg_tmp"
+          printf '%s' "$GPG_PRIVATE_KEY" > "$_gpg_tmp"
+          gpg --batch --import "$_gpg_tmp"
+          rm -f "$_gpg_tmp"
           # Extract the full fingerprint (reliable across GPG versions)
           GPG_FINGERPRINT=$(gpg --list-secret-keys --with-colons 2>/dev/null | awk -F: '/^fpr:/ {print $10; exit}')
-          GPG_KEY_ID=$(echo "$GPG_FINGERPRINT" | tail -c 17)
+          GPG_KEY_ID="${GPG_FINGERPRINT: -16}"
           # Trust the imported key ultimately
           echo "${GPG_FINGERPRINT}:6:" | gpg --import-ownertrust
           # Export the key ID for later steps
@@ -62,10 +82,13 @@ jobs:
 
       - name: Check for updates and compile if needed
         id: build
-        timeout-minutes: 30
+        timeout-minutes: 25
         env:
           GPG_KEY_ID: ${{ env.GPG_KEY_ID }}
           GPG_FINGERPRINT: ${{ env.GPG_FINGERPRINT }}
+          # Explicitly forward these so they are available inside the sudo subprocess
+          GITHUB_REPOSITORY_OWNER: ${{ github.repository_owner }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
         run: |
           mkdir -p /tmp/artifact
           chmod +x scripts/build.sh
@@ -74,8 +97,12 @@ jobs:
 
           # If GPG key is set up, share it with the builder user
           if [ -n "$GPG_FINGERPRINT" ]; then
-            # Export and import GPG key for builder user
-            gpg --armor --export-secret-keys "$GPG_FINGERPRINT" | sudo -u builder gpg --batch --import
+            # Export the secret key to a secure temp file before importing into builder's keyring
+            _builder_gpg_tmp=$(mktemp)
+            chmod 600 "$_builder_gpg_tmp"
+            gpg --armor --export-secret-keys "$GPG_FINGERPRINT" > "$_builder_gpg_tmp"
+            sudo -u builder gpg --batch --import "$_builder_gpg_tmp"
+            rm -f "$_builder_gpg_tmp"
             echo "${GPG_FINGERPRINT}:6:" | sudo -u builder gpg --import-ownertrust
           fi
 
@@ -93,17 +120,27 @@ jobs:
               rm build_status
           else
               # Sign and create pacman repository database
+              # Verify packages exist before proceeding
+              shopt -s nullglob
+              pkgs=(*.pkg.tar.zst)
+              shopt -u nullglob
+              if [ ${#pkgs[@]} -eq 0 ]; then
+                  echo "ERROR: No packages found to add to repository"
+                  exit 1
+              fi
+
               if [ -n "${GPG_KEY_ID:-}" ]; then
                   echo "Signing packages and repo with GPG key $GPG_KEY_ID"
                   # Sign each package
-                  for pkg in *.pkg.tar.zst; do
-                      gpg --batch --yes --detach-sign --use-agent "$pkg"
+                  for pkg in "${pkgs[@]}"; do
+                      gpg --batch --yes --pinentry-mode loopback --detach-sign -u "$GPG_KEY_ID" "$pkg"
+                      gpg --verify "$pkg.sig" "$pkg"
                   done
-                  repo-add --sign noctalia.db.tar.gz *.pkg.tar.zst
+                  repo-add --sign --key "$GPG_KEY_ID" noctalia.db.tar.gz "${pkgs[@]}"
               else
                   echo "WARNING: No GPG key configured — packages will NOT be signed."
                   echo "Set the GPG_PRIVATE_KEY secret to enable signing."
-                  repo-add noctalia.db.tar.gz *.pkg.tar.zst
+                  repo-add noctalia.db.tar.gz "${pkgs[@]}"
               fi
 
               # GitHub Pages cannot follow symlinks, so replace them with copies
@@ -126,70 +163,21 @@ jobs:
               fi
 
               # Determine package version
-              PKG_FILE=$(ls *.pkg.tar.zst | head -n 1)
-              VERSION=$(pacman -Qip "$PKG_FILE" | grep Version | awk '{print $3}')
-
+              PKG_FILE="${pkgs[0]}"
+              # Use bsdtar + .PKGINFO for reliable version extraction on uninstalled packages
+              VERSION=$(bsdtar -xOf "$PKG_FILE" .PKGINFO | awk -F' = ' '/^pkgver/{print $2; exit}')
               REPO_URL="https://${GITHUB_REPOSITORY_OWNER}.github.io/${GITHUB_REPOSITORY#*/}"
-
-              # Determine SigLevel and setup instructions based on whether signing is configured
-              if [ -n "${GPG_KEY_ID:-}" ]; then
-                  SIGLEVEL="Required DatabaseOptional"
-                  SETUP_INSTRUCTIONS=$(cat <<'INNER'
-          <h2>Setup</h2>
-          <p>1. Import the signing key:</p>
-          <pre>curl -fsSL ${REPO_URL}/noctalia-signing-key.gpg | sudo pacman-key --add -
-          sudo pacman-key --lsign-key ${GPG_KEY_ID}</pre>
-          <p>2. Add to /etc/pacman.conf:</p>
-          <pre>
-          [noctalia]
-          SigLevel = Required DatabaseOptional
-          Server = ${REPO_URL}
-          </pre>
-          <p>3. Install:</p>
-          <pre>sudo pacman -Sy noctalia-git</pre>
-          INNER
-          )
-                  # Expand variables in the setup instructions
-                  SETUP_INSTRUCTIONS=$(echo "$SETUP_INSTRUCTIONS" | sed "s|\${REPO_URL}|${REPO_URL}|g; s|\${GPG_KEY_ID}|${GPG_KEY_ID}|g")
-              else
-                  SIGLEVEL="Optional TrustAll"
-                  SETUP_INSTRUCTIONS=$(cat <<INNER
-          <h2>Setup</h2>
-          <p>Add to /etc/pacman.conf:</p>
-          <pre>
-          [noctalia]
-          SigLevel = Optional TrustAll
-          Server = ${REPO_URL}
-          </pre>
-          <p>Then run: <code>sudo pacman -Sy noctalia-git</code></p>
-          INNER
-          )
-              fi
 
               # Write a plain-text COMMIT file for the next run's cache check
               echo "$COMMIT" > COMMIT
 
-              # Generate index page
-              cat <<EOF > index.html
-          <!DOCTYPE html>
-          <html lang="en">
-          <head>
-          <meta charset="utf-8">
-          <meta name="viewport" content="width=device-width, initial-scale=1">
-          <title>Noctalia Repository</title>
-          </head>
-          <body>
-          <h1>Noctalia Repository</h1>
-          <p>Version: ${VERSION}</p>
-          <p>Commit: ${COMMIT}</p>
-          ${SETUP_INSTRUCTIONS}
-          </body>
-          </html>
-          EOF
+              # Generate index page using helper script
+              chmod +x "$GITHUB_WORKSPACE/scripts/generate_index.sh"
+              "$GITHUB_WORKSPACE/scripts/generate_index.sh" /tmp/artifact "$VERSION" "$COMMIT" "${GPG_KEY_ID:-}" "$REPO_URL"
 
-              # Generate checksums for integrity verification
-              sha256sum *.pkg.tar.zst noctalia.db noctalia.db.tar.gz \
-                        noctalia.files noctalia.files.tar.gz > SHA256SUMS
+              # Generate checksums for integrity verification across all repository files
+              # Do NOT suppress errors — a failure here would cause a confusing mismatch on the next run.
+              sha256sum ./*.pkg.tar.zst* ./noctalia.db* ./noctalia.files* > SHA256SUMS
           fi
 
       - name: Upload Package Artifact
