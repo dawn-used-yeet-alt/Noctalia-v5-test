@@ -101,6 +101,7 @@ jobs:
             _builder_gpg_tmp=$(mktemp)
             chmod 600 "$_builder_gpg_tmp"
             gpg --armor --export-secret-keys "$GPG_FINGERPRINT" > "$_builder_gpg_tmp"
+            chown builder "$_builder_gpg_tmp"  # builder must own the file to read it (root-created 600 is unreadable by others)
             sudo -u builder gpg --batch --import "$_builder_gpg_tmp"
             rm -f "$_builder_gpg_tmp"
             echo "${GPG_FINGERPRINT}:6:" | sudo -u builder gpg --import-ownertrust
