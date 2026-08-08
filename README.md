@@ -12,7 +12,7 @@ If the repository has GPG signing enabled, first import the signing key (the key
 
 ```bash
 curl -fsSL https://dawn-used-yeet-alt.github.io/Noctalia-v5-test/noctalia-signing-key.gpg | sudo pacman-key --add -
-sudo pacman-key --lsign-key <KEY_ID>  # KEY_ID is shown on the repository landing page
+sudo pacman-key --lsign-key FACDAEC5C6FDA57B
 ```
 
 Then add to `/etc/pacman.conf`:
